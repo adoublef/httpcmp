@@ -10,10 +10,12 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v3"
+	"go.adoublef.dev/runtime/debug"
 )
 
 func App() *fiber.App {
 	app := fiber.New(fiber.Config{
+		StreamRequestBody: true,
 		// We set a function once. Custom logic needed to handle json errors.
 		// which is no different to the stdlib.
 		// https://docs.gofiber.io/guide/error-handling/#custom-error-handler
@@ -95,7 +97,7 @@ func handleUpload(sink io.Writer) fiber.Handler {
 		if !ok {
 			return nil, http.ErrMissingBoundary
 		}
-		return multipart.NewReader(c.RequestCtx().RequestBodyStream(), boundary), nil
+		return multipart.NewReader(r, boundary), nil
 	}
 	return func(c fiber.Ctx) error {
 		mr, err := parse(c)
@@ -104,6 +106,7 @@ func handleUpload(sink io.Writer) fiber.Handler {
 		}
 		p, err := mr.NextPart()
 		if err != nil {
+			debug.Printf("//! err = %v", err) // error when reading request headers: cannot find http request method in
 			return fiber.NewError(fiber.StatusUnprocessableEntity, err.Error())
 		}
 		defer p.Close()

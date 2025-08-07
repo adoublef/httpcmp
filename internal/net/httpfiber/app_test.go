@@ -3,6 +3,8 @@ package httpfiber_test
 
 import (
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"testing"
 
@@ -80,6 +82,50 @@ func Test_handleParameters(t *testing.T) {
 		}
 		is.OK(t, json.NewDecoder(res.Body).Decode(&data))
 		is.True(t, data.Error != "")
+
+		is.OK(t, res.Body.Close())
+	})
+}
+
+func Test_handleUpload(t *testing.T) {
+	t.Run("OK", func(t *testing.T) {
+		app := newApp(t)
+
+		// create a multipart
+		pr, pw := io.Pipe()
+		defer pr.Close()
+
+		mw := multipart.NewWriter(pw)
+		go func() {
+			defer pw.Close()
+			defer mw.Close()
+
+			w, err := mw.CreateFormFile("file", "hello.txt")
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			_, err = w.Write([]byte("hello, world!\n"))
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+		}()
+
+		req, err := http.NewRequest("POST", "/upload", pr)
+		is.OK(t, err)
+
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+
+		res, err := app.Test(req, fiber.TestConfig{Timeout: 0})
+		is.OK(t, err)
+		is.Equal(t, res.StatusCode, http.StatusBadRequest)
+
+		var data struct {
+			N int `json:"bytesWritten"`
+		}
+		is.OK(t, json.NewDecoder(res.Body).Decode(&data))
+		is.Equal(t, data.N, 14)
 
 		is.OK(t, res.Body.Close())
 	})

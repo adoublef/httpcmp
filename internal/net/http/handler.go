@@ -46,6 +46,9 @@ func handleParameters() http.HandlerFunc {
 }
 
 func handleUpload(sink io.Writer) http.HandlerFunc {
+	type response struct {
+		N int `json:"bytesWritten"`
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		mr, err := r.MultipartReader()
 		if err != nil {
@@ -59,7 +62,12 @@ func handleUpload(sink io.Writer) http.HandlerFunc {
 		}
 		defer p.Close()
 		// todo: handle filename + formname
-		_, _ = io.Copy(sink, p)
+		n, err := io.Copy(sink, p)
+		if err != nil {
+			handleError(w, r, err, http.StatusInternalServerError)
+			return
+		}
+		respond(w, r, response{int(n)}, http.StatusOK)
 	}
 }
 
