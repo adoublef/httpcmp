@@ -2,6 +2,7 @@ package httpecho
 
 import (
 	"cmp"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -10,10 +11,9 @@ import (
 
 func Echo() *echo.Echo {
 	e := echo.New()
-
 	e.GET("/ping", handlePing())
 	e.GET("/users/:user/books/:book", handleParameters())
-
+	e.POST("/upload", handleUpload(io.Discard))
 	return e
 }
 
@@ -43,5 +43,23 @@ func handleParameters() echo.HandlerFunc {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
 		return c.JSON(http.StatusOK, response{user, book})
+	}
+}
+
+func handleUpload(sink io.Writer) echo.HandlerFunc {
+	// require the underlying [http.Request] for the multipart reader.
+	return func(c echo.Context) error {
+		mr, err := c.Request().MultipartReader()
+		if err != nil {
+			return echo.NewHTTPError(http.StatusUnsupportedMediaType, err.Error())
+		}
+		p, err := mr.NextPart()
+		if err != nil {
+			return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())
+		}
+		defer p.Close()
+		// todo: handle filename + formname
+		_, err = io.Copy(sink, p)
+		return err
 	}
 }

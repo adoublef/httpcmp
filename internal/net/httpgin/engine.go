@@ -2,6 +2,7 @@ package httpgin
 
 import (
 	"cmp"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -12,6 +13,7 @@ func Engine() *gin.Engine {
 	e := gin.Default()
 	e.GET("/ping", handleOK())
 	e.GET("/users/:user/books/:book", handleParameters())
+	e.POST("/upload", handleUpload(io.Discard))
 	return e
 }
 
@@ -48,5 +50,14 @@ func handleParameters() gin.HandlerFunc {
 			return
 		}
 		ctx.JSON(http.StatusOK, response{user, book})
+	}
+}
+
+func handleUpload(sink io.Writer) gin.HandlerFunc {
+	// only provides [fiber.Ctx.MultipartForm] which is ill-fitted
+	// when requirements are to stream data without an intermediary stage.
+	// thus we need to use a MultipartReader, no different to stdlib.
+	return func(ctx *gin.Context) {
+
 	}
 }

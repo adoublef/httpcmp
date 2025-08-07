@@ -3,6 +3,7 @@ package http
 import (
 	"cmp"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 )
@@ -11,6 +12,7 @@ func Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /ping", handlePing())
 	mux.Handle("GET /users/{user}/books/{book}", handleParameters())
+	mux.Handle("POST /upload", handleUpload(io.Discard))
 	return mux
 }
 
@@ -40,6 +42,24 @@ func handleParameters() http.HandlerFunc {
 			return
 		}
 		respond(w, r, response{user, book}, http.StatusOK)
+	}
+}
+
+func handleUpload(sink io.Writer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		mr, err := r.MultipartReader()
+		if err != nil {
+			handleError(w, r, err, http.StatusUnsupportedMediaType)
+			return
+		}
+		p, err := mr.NextPart()
+		if err != nil {
+			handleError(w, r, err, http.StatusUnprocessableEntity)
+			return
+		}
+		defer p.Close()
+		// todo: handle filename + formname
+		_, _ = io.Copy(sink, p)
 	}
 }
 

@@ -3,6 +3,10 @@ package httpfiber
 import (
 	"cmp"
 	"errors"
+	"io"
+	"mime"
+	"mime/multipart"
+	"net/http"
 	"strconv"
 
 	"github.com/gofiber/fiber/v3"
@@ -26,6 +30,7 @@ func App() *fiber.App {
 	// app.Use()
 	app.Get("/ping", handlePing())
 	app.Get("/users/:user/books/:book", handleParameters())
+	app.Post("/upload", handleUpload(io.Discard))
 	return app
 }
 
@@ -59,5 +64,51 @@ func handleParameters() fiber.Handler {
 			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}
 		return c.Status(fiber.StatusOK).JSON(response{user, book})
+	}
+}
+
+func handleUpload(sink io.Writer) fiber.Handler {
+	// only provides [fiber.Ctx.MultipartForm] which is ill-fitted
+	// when requirements are to stream data without an intermediary stage.
+	// thus we need to use a MultipartReader, no different to stdlib.
+	//
+	// we also have to handle the content-type manually.
+	//
+	// https://github.com/gofiber/fiber/issues/1838
+	// https://github.com/valyala/fasthttp/issues/622#issuecomment-519136734
+	parse := func(c fiber.Ctx) (*multipart.Reader, error) {
+		// https://cs.opensource.google/go/go/+/refs/tags/go1.18:src/net/http/request.go;l=467
+		v := c.Get("Content-Type")
+		if v == "" {
+			return nil, http.ErrNotMultipart
+		}
+		// this does not return an [io.ReadCloser]
+		r := c.RequestCtx().RequestBodyStream()
+		if r == nil {
+			return nil, errors.New("missing form body")
+		}
+		d, params, err := mime.ParseMediaType(v)
+		if err != nil || !(d == "multipart/form-data" || d == "multipart/mixed") {
+			return nil, http.ErrNotMultipart
+		}
+		boundary, ok := params["boundary"]
+		if !ok {
+			return nil, http.ErrMissingBoundary
+		}
+		return multipart.NewReader(c.RequestCtx().RequestBodyStream(), boundary), nil
+	}
+	return func(c fiber.Ctx) error {
+		mr, err := parse(c)
+		if err != nil {
+			return fiber.NewError(fiber.StatusUnsupportedMediaType, err.Error())
+		}
+		p, err := mr.NextPart()
+		if err != nil {
+			return fiber.NewError(fiber.StatusUnprocessableEntity, err.Error())
+		}
+		defer p.Close()
+		// todo: handle filename + formname
+		_, err = io.Copy(sink, p)
+		return err
 	}
 }
